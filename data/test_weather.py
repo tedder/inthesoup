@@ -229,10 +229,11 @@ class TestNOAAAccess:
         assert urls[-1].endswith('blend.20260905/23/text/blend_nbstx.t23z')
         assert all(call.kwargs['timeout'] == (10, 60) for call in mock_get.call_args_list)
 
+    @pytest.mark.parametrize('status', [403, 404])
     @patch('load_weather.requests.get')
-    def test_missing_text_directory_falls_back(self, mock_get):
+    def test_missing_text_directory_falls_back(self, mock_get, status):
         mock_get.side_effect = [listing('blend.20260906/'), listing('16/', '17/'),
-                               response(status=404), listing('blend_nbhtx.t16z', 'blend_nbstx.t16z'),
+                               response(status=status), listing('blend_nbhtx.t16z', 'blend_nbstx.t16z'),
                                response('NBH data'), response('NBS data')]
         assert weather.get_noaa_data() == ('NBH data', 'NBS data')
 

@@ -60,7 +60,7 @@ services:
       CIFP_SCHEDULE: ${CIFP_SCHEDULE:-0 0 * * 0}
       KUMA_PUSH_URL_CIFP: ${KUMA_PUSH_URL_CIFP:-}
     # Measured peak about 2.5 GiB during the Reading CIFP records step.
-    mem_limit: 3g
+    mem_limit: 4g
 
 volumes:
   data:

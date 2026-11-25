@@ -103,7 +103,9 @@ def get_noaa_data():
           raise ValueError('NOAA returned an empty or HTML forecast product')
         return products
       except requests.HTTPError as error:
-        if error.response.status_code != 404:
+        # A cycle directory can answer 403 for a few minutes after it appears
+        # (seen 2026-09-07 and 2026-11-25), so treat it like a missing one.
+        if error.response.status_code not in (403, 404):
           raise
   raise RuntimeError('No complete NBH/NBS pair found on NOAA')
 
