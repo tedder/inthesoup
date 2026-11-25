@@ -11,6 +11,8 @@ const airports = [
   ['KNEAR', 'Near Field', 45.2, -122.0, 200],
   ['KLOW', 'Low Field', 45.1, -122.0, 0],
   ['KFAR', 'Far Field', 47.0, -122.0, 50],
+  // No approaches (not in the FAF table): never the nearest-airport answer.
+  ['KNOAP', 'No Approach Field', 46.5, -122.0, 300],
 ];
 
 // [airport, approach id, approach name, pdf, FAF altitude MSL]

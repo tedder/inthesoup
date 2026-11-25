@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DuckDBInstance, DuckDBConnection } from '@duckdb/node-api';
 import { DataUnavailableError } from './errors';
-import type { ApproachParams, ApproachRow } from './types';
+import type { ApproachParams, ApproachRow, NearestAirport } from './types';
 
 // Parquet files the loaders produce, as view name -> file name in DATA_DIR.
 export const DATA_FILES: Record<string, string> = {
@@ -121,6 +121,19 @@ ORDER BY
   ANY_VALUE(Filtered_FAF_Airport.Distance_NM) ASC,
   wx.Time ASC;`
 
+// Nearest airport that has an instrument approach (appears in the FAF table).
+const nearestQuery = `SELECT
+  Airport_ICAO_Identifier AS icao,
+  Airport_Name AS name,
+  gc_distance_nm(Latitude, Longitude, $lat, $lon) AS distance_nm
+FROM
+  airport
+WHERE
+  Airport_ICAO_Identifier IN (SELECT DISTINCT Airport_Identifier FROM faf)
+ORDER BY
+  distance_nm ASC, icao ASC
+LIMIT 1`;
+
 const sqlString = (value: string) => `'${value.replace(/'/g, "''")}'`;
 
 type State = { connection: DuckDBConnection; viewsFor: string | null };
@@ -215,8 +228,24 @@ async function run(params: ApproachParams): Promise<ApproachRow[]> {
   }
 }
 
-export function queryApproaches(params: ApproachParams): Promise<ApproachRow[]> {
-  const result = queue.then(() => run(params));
+function enqueue<T>(job: () => Promise<T>): Promise<T> {
+  const result = queue.then(job);
   queue = result.catch(() => undefined);
   return result;
+}
+
+export function queryApproaches(params: ApproachParams): Promise<ApproachRow[]> {
+  return enqueue(() => run(params));
+}
+
+async function runNearest(lat: number, lon: number): Promise<NearestAirport | null> {
+  const state = await getState();
+  await ensureViews(state, getDataDir());
+  const reader = await state.connection.runAndReadAll(nearestQuery, { lat, lon });
+  const rows = reader.getRowObjectsJS().map((row) => normalize(row) as NearestAirport);
+  return rows[0] ?? null;
+}
+
+export function nearestAirport(lat: number, lon: number): Promise<NearestAirport | null> {
+  return enqueue(() => runNearest(lat, lon));
 }

@@ -1,6 +1,6 @@
-import type { ApproachParams, ApproachRow } from './types';
+import type { ApproachParams, ApproachRow, NearestAirport } from './types';
 
-export type { ApproachParams, ApproachRow } from './types';
+export type { ApproachParams, ApproachRow, NearestAirport } from './types';
 export { DataUnavailableError } from './errors';
 
 export const FORECAST_TYPES = ['metar', 'taf', 'nbh', 'nbs'];
@@ -22,4 +22,13 @@ export async function queryApproaches(params: ApproachParams): Promise<ApproachR
   }
   const backend = await import('./bigquery');
   return backend.queryApproaches(params);
+}
+
+export async function nearestAirport(lat: number, lon: number): Promise<NearestAirport | null> {
+  if (getBackendName() === 'duckdb') {
+    const backend = await import('./duckdb');
+    return backend.nearestAirport(lat, lon);
+  }
+  const backend = await import('./bigquery');
+  return backend.nearestAirport(lat, lon);
 }

@@ -1,5 +1,5 @@
 import Head from 'next/head'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import Table from '../components/Table'
 import Timeline from '../components/Timeline'
 import { groupForecasts } from '../lib/forecastGroups'
@@ -14,12 +14,52 @@ export default function Home() {
   const [endHour, setEndHour] = useState('23')
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [localTime, setLocalTime] = useState(true)
+  // "Use my location": once pressed, the page looks up the nearest airport on each visit
+  // until the airport is typed by hand. Geolocation needs a secure (HTTPS) page.
+  const [canLocate, setCanLocate] = useState(false)
+  const [useLocation, setUseLocation] = useState(false)
+  const [locating, setLocating] = useState(false)
+  const [locationNote, setLocationNote] = useState<string | null>(null)
 
   const [loading, setLoading] = useState(false)
   const [forecasts, setForecasts] = useState<any[] | null>(null)
   const airportGroups = useMemo(() => groupForecasts(forecasts ?? [], resultSource), [forecasts, resultSource])
   const [darkMode, setDarkMode] = useState<'light' | 'dark' | 'system'>('system')
   const [themeReady, setThemeReady] = useState(false)
+
+  const locate = useCallback(() => {
+    if (!('geolocation' in navigator)) return
+    setLocating(true)
+    setLocationNote('Finding your location…')
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords
+        const params = new URLSearchParams({ lat: latitude.toFixed(4), lon: longitude.toFixed(4) })
+        fetch(`/api/nearest?${params.toString()}`)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.error || !data.icao) throw new Error(data.error || 'No nearby airport found')
+            setAirport(data.icao)
+            setUseLocation(true)
+            try { localStorage.setItem('useLocation', '1') } catch (_) {}
+            setLocationNote(`Nearest to you: ${data.icao}, ${Math.round(data.distance_nm)} nm`)
+          })
+          .catch((err) => setLocationNote(err.message))
+          .finally(() => setLocating(false))
+      },
+      (error) => {
+        setLocating(false)
+        if (error.code === error.PERMISSION_DENIED) {
+          setUseLocation(false)
+          try { localStorage.removeItem('useLocation') } catch (_) {}
+          setLocationNote('Location permission was denied')
+        } else {
+          setLocationNote('Could not get your location')
+        }
+      },
+      { enableHighAccuracy: false, timeout: 15000, maximumAge: 10 * 60 * 1000 },
+    )
+  }, [])
 
   // Restore the last search's airport, radius and source (saved on submit).
   useEffect(() => {
@@ -31,7 +71,21 @@ export default function Home() {
         if (['metar', 'taf', 'nbh', 'nbs'].includes(saved.forecast)) setForecast(saved.forecast)
       }
     } catch (_) {}
-  }, [])
+    const secure = window.isSecureContext && 'geolocation' in navigator
+    setCanLocate(secure)
+    let locationDefault = false
+    try { locationDefault = localStorage.getItem('useLocation') === '1' } catch (_) {}
+    if (secure && locationDefault) locate()
+  }, [locate])
+
+  const handleAirportChange = (value: string) => {
+    setAirport(value.toUpperCase())
+    if (useLocation) {
+      setUseLocation(false)
+      try { localStorage.removeItem('useLocation') } catch (_) {}
+    }
+    setLocationNote(null)
+  }
 
   // Handle dark mode
   useEffect(() => {
@@ -175,15 +229,37 @@ export default function Home() {
                   <label htmlFor="airport" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                     Airport
                   </label>
-                  <input
-                    type="text"
-                    name="airport"
-                    id="airport"
-                    className="input-field"
-                    placeholder="KSFO"
-                    value={airport}
-                    onChange={(e) => setAirport(e.target.value.toUpperCase())}
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      name="airport"
+                      id="airport"
+                      className={`input-field ${canLocate ? 'pr-11' : ''}`}
+                      value={airport}
+                      onChange={(e) => handleAirportChange(e.target.value)}
+                      aria-describedby={locationNote ? 'location-note' : undefined}
+                    />
+                    {canLocate && (
+                      <button
+                        type="button"
+                        onClick={locate}
+                        disabled={locating}
+                        aria-pressed={useLocation}
+                        aria-label="Use my location"
+                        title={useLocation ? 'Using your location (type an airport to stop)' : 'Use my location'}
+                        className={`absolute inset-y-0 right-0 flex items-center px-3 rounded-r-lg transition-colors ${useLocation ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'} ${locating ? 'animate-pulse' : ''}`}
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                          <circle cx="12" cy="12" r="3.5" strokeWidth={2} />
+                          <path strokeLinecap="round" strokeWidth={2} d="M12 2v3m0 14v3M2 12h3m14 0h3" />
+                          <circle cx="12" cy="12" r="7.5" strokeWidth={1.5} />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  {locationNote && (
+                    <p id="location-note" className="mt-1 text-xs text-slate-500 dark:text-slate-400">{locationNote}</p>
+                  )}
                 </div>
 
                 {/* Radius Select */}

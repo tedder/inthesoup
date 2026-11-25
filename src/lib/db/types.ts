@@ -1,3 +1,10 @@
+// Nearest airport with at least one instrument approach in the FAF table.
+export type NearestAirport = {
+  icao: string;
+  name: string;
+  distance_nm: number;
+};
+
 export type ApproachParams = {
   airport: string;
   radius: number;

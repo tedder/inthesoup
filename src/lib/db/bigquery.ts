@@ -1,5 +1,5 @@
 import { BigQuery } from '@google-cloud/bigquery';
-import type { ApproachParams, ApproachRow } from './types';
+import type { ApproachParams, ApproachRow, NearestAirport } from './types';
 
 const bigquery = new BigQuery({ projectId: 'inthesoup' });
 
@@ -111,4 +111,21 @@ export async function queryApproaches(params: ApproachParams): Promise<ApproachR
 
   // BigQuery returns TIMESTAMP as { value: string }; normalize to a string.
   return rows.map((row: any) => ({ ...row, Time: row.Time.value }));
+}
+
+const nearestQuery = `SELECT
+  Airport_ICAO_Identifier AS icao,
+  Airport_Name AS name,
+  ST_DISTANCE(ST_GEOGPOINT(Longitude, Latitude), ST_GEOGPOINT(@lon, @lat)) * 0.000539957 AS distance_nm
+FROM
+  \`inthesoup.aeronautical.airport\`
+WHERE
+  Airport_ICAO_Identifier IN (SELECT DISTINCT Airport_Identifier FROM \`inthesoup.aeronautical.faf\`)
+ORDER BY
+  distance_nm ASC, icao ASC
+LIMIT 1`;
+
+export async function nearestAirport(lat: number, lon: number): Promise<NearestAirport | null> {
+  const [rows] = await bigquery.query({ query: nearestQuery, params: { lat, lon } });
+  return rows.length ? (rows[0] as NearestAirport) : null;
 }
