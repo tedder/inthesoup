@@ -14,6 +14,7 @@ import pandas as pd
 import pandas_gbq
 import requests
 from charts import get_charts, merge_charts
+from local_output import write_tables
 from tqdm import tqdm
 from bs4 import BeautifulSoup
 
@@ -148,7 +149,7 @@ def parse_cifp(file_path):
   return df_apt, df_faf
 
 
-def main(dry_run=False, output_dir=None):
+def main(dry_run=False, output_dir=None, output_format='csv'):
   started = time.monotonic()
   url, cycle = get_current_cifp_cycle()
 
@@ -185,12 +186,9 @@ def main(dry_run=False, output_dir=None):
   if dry_run:
     return df_apt, df_faf
   if output_dir:
-    # Local files instead of BigQuery: one CSV per table, named after it.
-    os.makedirs(output_dir, exist_ok=True)
-    for table, frame in (('aeronautical.airport', df_apt), ('aeronautical.faf', df_faf)):
-      path = os.path.join(output_dir, table + '.csv')
-      frame.to_csv(path, index=False)
-      print(f'Wrote {path}')
+    # Local files instead of BigQuery: one file per table, named after it.
+    tables = {'aeronautical.airport': df_apt, 'aeronautical.faf': df_faf}
+    write_tables(output_dir, tables, output_format, 'aeronautical.status.json', extra={'cycle': cycle})
     return df_apt, df_faf
 
   df_apt.to_csv('apt.csv', index=False)
@@ -209,6 +207,7 @@ def main(dry_run=False, output_dir=None):
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument('--dry-run', action='store_true', help='Download and parse without writing to BigQuery or CSV files')
-  parser.add_argument('--output-dir', help='Write <table>.csv files here instead of writing to BigQuery')
+  parser.add_argument('--output-dir', help='Write <table>.<format> files here instead of writing to BigQuery')
+  parser.add_argument('--format', choices=['csv', 'parquet'], default='csv', help='File format for --output-dir (default: csv)')
   args = parser.parse_args()
-  main(dry_run=args.dry_run, output_dir=args.output_dir)
+  main(dry_run=args.dry_run, output_dir=args.output_dir, output_format=args.format)

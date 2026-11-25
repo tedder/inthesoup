@@ -19,6 +19,8 @@ import pandas_gbq
 import requests
 from tqdm import tqdm
 
+from local_output import write_tables
+
 HTTP_TIMEOUT = (10, 60)  # Connect and read timeouts, in seconds.
 NOAA_URL = 'https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/'
 CACHE_URL = 'https://aviationweather.gov/data/cache/'
@@ -347,7 +349,7 @@ def parse_noaa_product(product, fmt):
   return result
 
 
-def main(dry_run=False, output_dir=None):
+def main(dry_run=False, output_dir=None, output_format='csv'):
   started = time.monotonic()
   # Fetch and validate every source before replacing any live tables. Exceptions
   # propagate so CI and Cloud Run report failed refreshes rather than success.
@@ -366,12 +368,8 @@ def main(dry_run=False, output_dir=None):
   if dry_run:
     return tables
   if output_dir:
-    # Local files instead of BigQuery: one CSV per table, named after it.
-    os.makedirs(output_dir, exist_ok=True)
-    for table, frame in tables.items():
-      path = os.path.join(output_dir, table + '.csv')
-      frame.to_csv(path, index=False)
-      print(f'Wrote {path}', flush=True)
+    # Local files instead of BigQuery: one file per table, named after it.
+    write_tables(output_dir, tables, output_format, 'weather.status.json', source_time=True)
     return tables
 
   credentials, project = google.auth.default()
@@ -389,6 +387,7 @@ def main(dry_run=False, output_dir=None):
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument('--dry-run', action='store_true', help='Download and parse without writing to BigQuery')
-  parser.add_argument('--output-dir', help='Write <table>.csv files here instead of writing to BigQuery')
+  parser.add_argument('--output-dir', help='Write <table>.<format> files here instead of writing to BigQuery')
+  parser.add_argument('--format', choices=['csv', 'parquet'], default='csv', help='File format for --output-dir (default: csv)')
   args = parser.parse_args()
-  main(dry_run=args.dry_run, output_dir=args.output_dir)
+  main(dry_run=args.dry_run, output_dir=args.output_dir, output_format=args.format)

@@ -5,7 +5,9 @@ enables a download-and-parse integration test; it never writes to BigQuery.
 """
 
 import gzip
+import json
 import os
+import re
 from pathlib import Path
 from xml.etree.ElementTree import Element, SubElement, tostring
 
@@ -508,8 +510,72 @@ class TestRefresh:
         auth.assert_not_called()
         upload.assert_not_called()
         names = sorted(path.name for path in (tmp_path / 'out').iterdir())
-        assert names == ['weather.metar.csv', 'weather.nbh.csv', 'weather.nbs.csv', 'weather.taf.csv']
+        assert names == ['weather.metar.csv', 'weather.nbh.csv', 'weather.nbs.csv', 'weather.status.json', 'weather.taf.csv']
         assert pd.read_csv(tmp_path / 'out' / 'weather.metar.csv').Location.tolist() == ['KCVO']
+
+class TestParquetOutput:
+    def run(self, tmp_path, aware_metar=True, **kwargs):
+        aware = pd.Timestamp('2026-11-25 00:15', tz='America/Los_Angeles')
+        naive = datetime(2026, 11, 25, 1)
+        metar = pd.DataFrame({'Location': ['KCVO'], 'Time': [aware], 'Forecast_Time': [aware],
+                              'IFC': pd.Series([None], dtype='float64'), 'TAF': [None]})
+        nb = pd.DataFrame({'Location': ['KCVO', 'KHIO'], 'Time': [naive, naive],
+                           'Forecast_Time': [naive, datetime(2026, 11, 24, 23)], 'TMP': [40, 41]})
+        tables = {'weather.metar': metar, 'weather.taf': metar, 'weather.nbh': nb, 'weather.nbs': nb}
+        out = tmp_path / 'out'
+        with patch('load_weather.get_metar_data', return_value=metar), \
+             patch('load_weather.get_taf_data', return_value=metar), \
+             patch('load_weather.get_noaa_data', return_value=('nbh', 'nbs')), \
+             patch('load_weather.parse_noaa_product', side_effect=lambda product, fmt: nb), \
+             patch('load_weather.google.auth.default') as auth, \
+             patch('load_weather.pandas_gbq.to_gbq') as upload:
+            weather.main(output_dir=str(out), **kwargs)
+        auth.assert_not_called()
+        upload.assert_not_called()
+        return out
+
+    def test_parquet_files_and_utc_times(self, tmp_path):
+        out = self.run(tmp_path, output_format='parquet')
+        names = sorted(path.name for path in out.iterdir())
+        assert names == ['weather.metar.parquet', 'weather.nbh.parquet', 'weather.nbs.parquet',
+                         'weather.status.json', 'weather.taf.parquet']
+        metar = pd.read_parquet(out / 'weather.metar.parquet')
+        assert str(metar.Time.dtype) == 'datetime64[ns, UTC]'
+        assert metar.Time[0] == pd.Timestamp('2026-11-25 08:15', tz='UTC')
+        assert metar.IFC.dtype == 'float64'
+        nbh = pd.read_parquet(out / 'weather.nbh.parquet')
+        assert str(nbh.Time.dtype) == str(nbh.Forecast_Time.dtype) == 'datetime64[ns, UTC]'
+        assert nbh.Time[0] == pd.Timestamp('2026-11-25 01:00', tz='UTC')
+
+    def test_status_file(self, tmp_path):
+        out = self.run(tmp_path, output_format='parquet')
+        status = json.loads((out / 'weather.status.json').read_text())
+        assert list(status) == ['finished_at', 'format', 'tables']
+        assert status['format'] == 'parquet'
+        assert re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ', status['finished_at'])
+        assert list(status['tables']) == ['weather.metar', 'weather.taf', 'weather.nbh', 'weather.nbs']
+        assert status['tables']['weather.metar'] == {'rows': 1, 'latest_source_time': '2026-11-25T08:15:00Z'}
+        assert status['tables']['weather.nbh'] == {'rows': 2, 'latest_source_time': '2026-11-25T01:00:00Z'}
+
+    def test_csv_format_also_writes_status(self, tmp_path):
+        out = self.run(tmp_path)
+        assert json.loads((out / 'weather.status.json').read_text())['format'] == 'csv'
+
+    def test_failed_write_keeps_previous_files_and_status(self, tmp_path):
+        out = self.run(tmp_path, output_format='parquet')
+        before = {path.name: path.read_bytes() for path in out.iterdir()}
+        calls = []
+        real = pd.DataFrame.to_parquet
+
+        def flaky(self, path, **kwargs):
+            calls.append(path)
+            if len(calls) == 3:
+                raise OSError('disk full')
+            return real(self, path, **kwargs)
+
+        with patch.object(pd.DataFrame, 'to_parquet', flaky), pytest.raises(OSError):
+            self.run(tmp_path, output_format='parquet')
+        assert {path.name: path.read_bytes() for path in out.iterdir()} == before
 
 @pytest.mark.skipif(os.environ.get('WEATHER_LIVE_TEST') != '1', reason='Set WEATHER_LIVE_TEST=1 for live downloads')
 def test_live_weather_downloads():
