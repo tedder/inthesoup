@@ -116,3 +116,70 @@ export function formatCloudBases(values: (number | null)[]) {
   const max = Math.max(...known);
   return `LCB: ${min === max ? min.toLocaleString() : `${min.toLocaleString()}–${max.toLocaleString()}`} ft${known.length < values.length ? ' (some times unavailable)' : ''}`;
 }
+
+export type TimelineBar = { left: number; width: number; period: ForecastPeriod };
+export type TimelineRow = { airport: AirportGroup['airport']; bars: TimelineBar[] };
+export type TimelineLayout = {
+  start: number;
+  end: number;
+  ticks: { at: number; left: number }[];
+  now: number | null;
+  rows: TimelineRow[];
+};
+
+const HOUR = 3600000;
+
+/** How long one sample covers: NBS is 3-hourly, the others hourly (METAR shown as an hour). */
+export function sampleDuration(source: string) {
+  return source === 'nbs' ? 3 * HOUR : HOUR;
+}
+
+/**
+ * Place each airport's periods on one shared time axis, as percentages, for the
+ * Gantt-style timeline. Rows keep the groups' order (nearest airport first).
+ */
+export function timelineLayout(groups: AirportGroup[], source: string, nowMs: number = Date.now(),
+  utcOffsetMinutes = 0): TimelineLayout | null {
+  const duration = sampleDuration(source);
+  const spans = groups.flatMap(group => group.periods.map(period =>
+    [Date.parse(period.start), Date.parse(period.end) + duration]));
+  if (!spans.length) return null;
+  const start = Math.min(...spans.map(span => span[0]));
+  const end = Math.max(...spans.map(span => span[1]));
+  const total = end - start;
+  const percent = (ms: number) => ((ms - start) / total) * 100;
+
+  // Aim for at most about eight labeled ticks, on whole-hour multiples of the step
+  // in the displayed time zone (utcOffsetMinutes: e.g. -480 for PST, 0 for Zulu).
+  const hours = total / HOUR;
+  const step = ([1, 3, 6, 12, 24, 48].find(candidate => hours / candidate <= 8) ?? 96) * HOUR;
+  const offset = utcOffsetMinutes * 60000;
+  const ticks = [];
+  for (let at = Math.ceil((start + offset) / step) * step - offset; at <= end; at += step) {
+    ticks.push({ at, left: percent(at) });
+  }
+
+  return {
+    start,
+    end,
+    ticks,
+    now: nowMs >= start && nowMs <= end ? percent(nowMs) : null,
+    rows: groups.map(group => ({
+      airport: group.airport,
+      bars: group.periods.map(period => {
+        const left = percent(Date.parse(period.start));
+        return { left, width: percent(Date.parse(period.end) + duration) - left, period };
+      }),
+    })),
+  };
+}
+
+/** Tick label; midnight in the displayed zone also names the day, e.g. "Wed 00Z" or "Wed". */
+export function formatTick(ms: number, local: boolean) {
+  const date = new Date(ms);
+  const timeZone = local ? undefined : 'UTC';
+  const midnight = local ? date.getHours() === 0 : date.getUTCHours() === 0;
+  const day = new Intl.DateTimeFormat(undefined, { weekday: 'short', timeZone }).format(date);
+  if (!local) return `${midnight ? day + ' ' : ''}${String(date.getUTCHours()).padStart(2, '0')}Z`;
+  return midnight ? day : new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).format(date);
+}
