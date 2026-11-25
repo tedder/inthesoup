@@ -3,11 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const ts = require('typescript');
 const Module = require('node:module');
-const compiled = new Module('forecastGroups');
-compiled._compile(ts.transpileModule(fs.readFileSync('src/lib/forecastGroups.ts', 'utf8'), {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-}).outputText, 'forecastGroups.js');
-const { groupForecasts, formatPeriod, formatCloudBases } = compiled.exports;
+require('./helpers/register-ts.cjs');
+const { groupForecasts, formatPeriod, formatCloudBases } = require('../src/lib/forecastGroups.ts');
 const row = (hour, overrides = {}) => ({
   time: `2026-09-07T${String(hour).padStart(2, '0')}:00:00Z`,
   airport: { icao: 'KCVO', name: 'Corvallis', distance: 0 },
