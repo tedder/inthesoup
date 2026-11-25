@@ -115,7 +115,7 @@ test('health endpoint: duckdb backend reflects the data directory', async () => 
   process.env.DATA_DIR = setup({});
   assert.equal((await call(health)).status, 503);
   // The endpoint reads the real clock, so make the files fresh now, not at the fixed NOW.
-  const fresh = Date.now() - NOW;
+  const fresh = NOW - Date.now();
   const ok = setup({ 'weather.status.json': weather(fresh), 'aeronautical.status.json': aero(fresh) });
   process.env.DATA_DIR = ok;
   const { status, body } = await call(health);
