@@ -127,11 +127,13 @@ export type TimelineLayout = {
   ticks: { at: number; left: number }[];
   now: number | null;
   /** Daylight bands and sunrise/sunset edges (percent of the axis), at the nearest airport; null if unknown. */
-  sun: { day: { left: number; width: number }[]; edges: { left: number; kind: 'sunrise' | 'sunset' }[] } | null;
+  sun: { twilight: number; day: { left: number; width: number; fadeIn: boolean; fadeOut: boolean }[]; edges: { left: number; kind: 'sunrise' | 'sunset' }[] } | null;
   rows: TimelineRow[];
 };
 
 const HOUR = 3600000;
+/** Length of the day/night fade drawn at sunrise and sunset. */
+const TWILIGHT = 45 * 60000;
 
 /** How long one sample covers: NBS is 3-hourly, the others hourly (METAR shown as an hour). */
 export function sampleDuration(source: string) {
@@ -165,7 +167,11 @@ export function timelineLayout(groups: AirportGroup[], source: string, nowMs: nu
 
   const where = groups.find(group => group.airport.location)?.airport.location;
   const sun = where ? {
-    day: daylightIntervals(start, end, where.lat, where.lng).map(([a, b]) => ({ left: percent(a), width: percent(b) - percent(a) })),
+    twilight: percent(start + TWILIGHT) - percent(start),
+    // Fade only at a real sunrise/sunset, not where the band is cut off by the axis edge.
+    day: daylightIntervals(start, end, where.lat, where.lng).map(([a, b]) => ({
+      left: percent(a), width: percent(b) - percent(a), fadeIn: a > start, fadeOut: b < end,
+    })),
     edges: sunEvents(start, end, where.lat, where.lng)
       .filter(event => event.at > start && event.at < end)
       .map(event => ({ left: percent(event.at), kind: event.kind })),

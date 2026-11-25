@@ -38,9 +38,15 @@ export default function Timeline({ groups, source, localTime }: { groups: Airpor
                 <span className="ml-1.5 text-slate-500 dark:text-slate-400">{Math.round(airport.distance)} nm</span>
               </span>
               <span className="relative h-4 flex-1 rounded-sm bg-slate-200 dark:bg-slate-900/60">
-                {layout.sun?.day.map(({ left, width }) => (
-                  <span key={left} aria-hidden="true" className="absolute inset-y-0 bg-slate-50 dark:bg-slate-600/40" style={{ left: `${left}%`, width: `${width}%` }} />
-                ))}
+                {layout.sun?.day.map(({ left, width, fadeIn, fadeOut }) => {
+                  // Fade the light band in after sunrise and out before sunset (percent of the band).
+                  const fade = Math.min((layout.sun!.twilight / width) * 100, 50)
+                  const mask = `linear-gradient(to right, ${fadeIn ? 'transparent' : 'black'}, black ${fadeIn ? fade : 0}%, black ${fadeOut ? 100 - fade : 100}%, ${fadeOut ? 'transparent' : 'black'})`
+                  return (
+                    <span key={left} aria-hidden="true" className="absolute inset-y-0 bg-slate-50 dark:bg-slate-600/40"
+                      style={{ left: `${left}%`, width: `${width}%`, WebkitMaskImage: mask, maskImage: mask }} />
+                  )
+                })}
                 {layout.ticks.map(tick => (
                   <span key={tick.at} aria-hidden="true" className="absolute inset-y-0 w-px bg-slate-200 dark:bg-slate-600" style={{ left: `${tick.left}%` }} />
                 ))}

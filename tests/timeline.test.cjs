@@ -99,6 +99,9 @@ test('timeline layout has daylight bands when the airport has a location', () =>
   const rows = [0, 6, 12, 18, 23].map(h => ({ ...withLoc, time: `2026-11-25T${String(h).padStart(2, '0')}:00:00Z` }));
   const layout = timelineLayout(groupForecasts(rows, 'nbh'), 'nbh', NOW_OUTSIDE);
   assert.ok(layout.sun.day.length >= 1);
+  assert.ok(layout.sun.twilight > 0);
+  // The band is cut by the axis edge at one end and by a real sunset/sunrise at the other.
+  assert.ok(layout.sun.day.some(d => d.fadeIn !== d.fadeOut || d.fadeIn));
   assert.ok(layout.sun.edges.some(e => e.kind === 'sunrise'));
   assert.equal(timelineLayout(groupForecasts([row('KPDX', 12, 0)], 'nbh'), 'nbh', NOW_OUTSIDE).sun, null);
 });
