@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment } from "react";
 import { AirportGroup, formatPeriod, formatCloudBases, formatGapDuration } from "../lib/forecastGroups";
 
 const colorMap: Record<string, string> = {
@@ -41,8 +41,7 @@ function ApproachBadge(props: any) {
   }
 }
 
-export default function Table({ groups }: { groups: AirportGroup[] }) {
-  const [localTime, setLocalTime] = useState(true);
+export default function Table({ groups, localTime, setLocalTime }: { groups: AirportGroup[]; localTime: boolean; setLocalTime: (local: boolean) => void }) {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-end gap-2 text-sm text-slate-600 dark:text-slate-400">
@@ -61,10 +60,13 @@ export default function Table({ groups }: { groups: AirportGroup[] }) {
         <section key={airport.icao} aria-labelledby={`airport-${airport.icao}`} className="card overflow-hidden">
           <div className="flex items-center justify-between gap-4 px-4 py-4 sm:px-6 border-b border-slate-200 dark:border-slate-700">
             <div>
-              <h3 id={`airport-${airport.icao}`} className="text-lg font-semibold text-slate-900 dark:text-white">{airport.icao}</h3>
+              <h3 id={`airport-${airport.icao}`} className="scroll-mt-10 text-lg font-semibold text-slate-900 dark:text-white">{airport.icao}</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">{airport.name}</p>
             </div>
-            <span className="shrink-0 text-sm text-slate-600 dark:text-slate-400">{Math.round(airport.distance)} nm</span>
+            <div className="shrink-0 text-right text-sm text-slate-600 dark:text-slate-400">
+              <div>{Math.round(airport.distance)} nm</div>
+              <a href="#timeline" className="text-xs text-sky-600 dark:text-sky-400 hover:underline">↑ Timeline</a>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-left text-sm">

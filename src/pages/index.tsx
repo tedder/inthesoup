@@ -1,6 +1,7 @@
 import Head from 'next/head'
 import { useState, useEffect, useMemo } from 'react'
 import Table from '../components/Table'
+import Timeline from '../components/Timeline'
 import { groupForecasts } from '../lib/forecastGroups'
 
 export default function Home() {
@@ -12,12 +13,25 @@ export default function Home() {
   const [startHour, setStartHour] = useState('0')
   const [endHour, setEndHour] = useState('23')
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [localTime, setLocalTime] = useState(true)
 
   const [loading, setLoading] = useState(false)
   const [forecasts, setForecasts] = useState<any[] | null>(null)
   const airportGroups = useMemo(() => groupForecasts(forecasts ?? [], resultSource), [forecasts, resultSource])
   const [darkMode, setDarkMode] = useState<'light' | 'dark' | 'system'>('system')
   const [themeReady, setThemeReady] = useState(false)
+
+  // Restore the last search's airport, radius and source (saved on submit).
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('lastSearch') ?? 'null')
+      if (saved && typeof saved === 'object') {
+        if (typeof saved.airport === 'string') setAirport(saved.airport)
+        if (typeof saved.radius === 'string' && saved.radius) setRadius(saved.radius)
+        if (['metar', 'taf', 'nbh', 'nbs'].includes(saved.forecast)) setForecast(saved.forecast)
+      }
+    } catch (_) {}
+  }, [])
 
   // Handle dark mode
   useEffect(() => {
@@ -73,6 +87,8 @@ export default function Home() {
     if (!isNaN(parsedEndHour)) {
       params.set('endHour', String(parsedEndHour))
     }
+
+    try { localStorage.setItem('lastSearch', JSON.stringify({ airport, radius, forecast })) } catch (_) {}
 
     setLoading(true)
     fetch(`${endpoint}?${params.toString()}`)
@@ -351,12 +367,13 @@ export default function Home() {
 
             {!loading && forecasts && forecasts.length > 0 && (
               <div className="animate-fade-in">
+                <Timeline groups={airportGroups} source={resultSource} localTime={localTime} />
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
                     {airportGroups.length} {airportGroups.length === 1 ? 'airport' : 'airports'} found
                   </h2>
                 </div>
-                <Table groups={airportGroups} />
+                <Table groups={airportGroups} localTime={localTime} setLocalTime={setLocalTime} />
               </div>
             )}
           </div>
