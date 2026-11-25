@@ -546,6 +546,10 @@ class TestParquetOutput:
         nbh = pd.read_parquet(out / 'weather.nbh.parquet')
         assert str(nbh.Time.dtype) == str(nbh.Forecast_Time.dtype) == 'datetime64[ns, UTC]'
         assert nbh.Time[0] == pd.Timestamp('2026-11-25 01:00', tz='UTC')
+        # DuckDB cannot EXTRACT from nanosecond timestamps, so the files must use microseconds.
+        import pyarrow.parquet as pq
+        schema = pq.read_schema(out / 'weather.nbh.parquet')
+        assert str(schema.field('Time').type) == 'timestamp[us, tz=UTC]'
 
     def test_status_file(self, tmp_path):
         out = self.run(tmp_path, output_format='parquet')

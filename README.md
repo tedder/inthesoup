@@ -33,6 +33,56 @@ loaded into BigQuery.
 [next]: https://nextjs.org/
 [bq]: https://cloud.google.com/bigquery/
 
-## Running locally
+## Self-hosting
 
-*TODO*
+`docker-compose.yml` runs the app without Google Cloud, using DuckDB over
+Parquet files instead of BigQuery. Three services share one named volume
+(`data`):
+
+- `web`: the Next.js app (`DATA_BACKEND=duckdb`), reading the volume read-only.
+- `weather`: runs `load_weather.py` at startup, then hourly at minute 45.
+- `cifp`: runs `load_cifp.py` at startup if its data is missing or older than
+  7 days, then weekly on Sunday at 00:00 UTC.
+
+```sh
+docker compose up -d --build
+```
+
+The first start takes about 2-3 minutes while both loaders download data;
+`/api/health` returns 503 `loading` until then and 200 afterward. The app is
+at http://localhost:5095 (change with `INTHESOUP_PORT`).
+
+Settings are environment variables, set in the shell or a `.env` file next to
+`docker-compose.yml`:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `INTHESOUP_PORT` | `5095` | Host port for the web app |
+| `WEATHER_SCHEDULE` | `45 * * * *` | Cron schedule (UTC) for the weather loader |
+| `CIFP_SCHEDULE` | `0 0 * * 0` | Cron schedule (UTC) for the CIFP loader |
+| `KUMA_PUSH_URL_WEATHER`, `KUMA_PUSH_URL_CIFP` | unset | Uptime Kuma push URLs, requested after each successful run |
+| `DUCKDB_MEMORY_LIMIT` | `512MB` | DuckDB memory limit in the web app |
+| `DUCKDB_THREADS` | `2` | DuckDB threads in the web app |
+| `MAX_WEATHER_AGE_HOURS` | `3` | `/api/health` returns 503 when weather data is older |
+| `MAX_CIFP_AGE_DAYS` | `35` | `/api/health` returns 503 when CIFP data is older |
+
+A failed load is logged and retried at the next scheduled time; the previous
+data stays in place. Logs (rotated at 3 x 10 MB per container):
+
+```sh
+docker compose logs -f weather cifp web
+```
+
+The web container's Docker healthcheck only checks that the server answers, so
+stale data does not make the container unhealthy. Use `/api/health` for data
+freshness monitoring.
+
+To update, pull the new code and rebuild; the data volume is kept:
+
+```sh
+git pull
+docker compose up -d --build
+```
+
+`docker compose down -v` also deletes the data volume. Loader details are in
+[data/README.md](data/README.md).

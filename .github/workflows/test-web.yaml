@@ -1,0 +1,57 @@
+name: Test Web App
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'public/**'
+      - 'package*.json'
+      - 'next.config.js'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - '.github/workflows/test-web.yaml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'public/**'
+      - 'package*.json'
+      - 'next.config.js'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - '.github/workflows/test-web.yaml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Lint, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24' # Matches app.yaml and Dockerfile
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  docker:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build web image
+        run: docker build -t inthesoup-web .
+      - name: Check the DuckDB native module loads in the image
+        run: docker run --rm --entrypoint node inthesoup-web -e "require('@duckdb/node-api')"
+      - name: Build data image
+        run: docker build -t inthesoup-data data
+      - name: Check supercronic and the scheduler
+        run: |
+          docker run --rm --entrypoint supercronic inthesoup-data -version
+          docker run --rm --entrypoint bash inthesoup-data -n /app/scheduler.sh

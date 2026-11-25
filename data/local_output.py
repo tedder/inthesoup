@@ -55,7 +55,8 @@ def write_tables(output_dir, tables, fmt, status_name, extra=None, source_time=F
       tmp = os.path.join(output_dir, f'.{table}.{fmt}.tmp')
       temps[tmp] = final
       if fmt == 'parquet':
-        utc_columns(frame).to_parquet(tmp, index=False)
+        # Microsecond timestamps: DuckDB cannot EXTRACT from the nanosecond type pandas writes.
+        utc_columns(frame).to_parquet(tmp, index=False, coerce_timestamps='us')
       else:
         frame.to_csv(tmp, index=False)
     for tmp, final in list(temps.items()):
