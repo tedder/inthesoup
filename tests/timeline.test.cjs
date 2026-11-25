@@ -82,3 +82,23 @@ test('now marker appears only inside the axis', () => {
   const layout = timelineLayout(groups, 'nbh', Date.parse('2026-11-25T01:00:00Z'));
   close(layout.now, 50);
 });
+
+test('sunrise and sunset at Portland in late November', () => {
+  const { sunEvents } = require('../src/lib/sun.ts');
+  const events = sunEvents(Date.parse('2026-11-25T00:00:00Z'), Date.parse('2026-11-26T12:00:00Z'), 45.59, -122.6);
+  const rise = events.find(e => e.kind === 'sunrise' && e.at > Date.parse('2026-11-25T12:00:00Z'));
+  const set = events.find(e => e.kind === 'sunset' && e.at > Date.parse('2026-11-25T12:00:00Z'));
+  // About 07:20 PST (15:20Z) and 16:30 PST (00:30Z next day).
+  assert.ok(Math.abs(rise.at - Date.parse('2026-11-25T15:20:00Z')) < 10 * 60000, new Date(rise.at).toISOString());
+  assert.ok(Math.abs(set.at - Date.parse('2026-11-26T00:30:00Z')) < 10 * 60000, new Date(set.at).toISOString());
+});
+
+test('timeline layout has daylight bands when the airport has a location', () => {
+  const withLoc = row('KPDX', 12, 0);
+  withLoc.airport.location = { lat: 45.59, lng: -122.6 };
+  const rows = [0, 6, 12, 18, 23].map(h => ({ ...withLoc, time: `2026-11-25T${String(h).padStart(2, '0')}:00:00Z` }));
+  const layout = timelineLayout(groupForecasts(rows, 'nbh'), 'nbh', NOW_OUTSIDE);
+  assert.ok(layout.sun.day.length >= 1);
+  assert.ok(layout.sun.edges.some(e => e.kind === 'sunrise'));
+  assert.equal(timelineLayout(groupForecasts([row('KPDX', 12, 0)], 'nbh'), 'nbh', NOW_OUTSIDE).sun, null);
+});

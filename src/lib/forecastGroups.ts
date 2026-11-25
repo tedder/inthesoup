@@ -1,3 +1,5 @@
+import { daylightIntervals, sunEvents } from './sun';
+
 export type Approach = {
   id: string;
   name: string;
@@ -7,7 +9,7 @@ export type Approach = {
 
 export type Forecast = {
   time: string;
-  airport: { icao: string; name: string; distance: number };
+  airport: { icao: string; name: string; distance: number; location?: { lat: number; lng: number } };
   weather: { ceiling: number | null; lowest_cloud_base: number | null };
   approaches: Approach[];
 };
@@ -124,6 +126,8 @@ export type TimelineLayout = {
   end: number;
   ticks: { at: number; left: number }[];
   now: number | null;
+  /** Daylight bands and sunrise/sunset edges (percent of the axis), at the nearest airport; null if unknown. */
+  sun: { day: { left: number; width: number }[]; edges: { left: number; kind: 'sunrise' | 'sunset' }[] } | null;
   rows: TimelineRow[];
 };
 
@@ -159,10 +163,19 @@ export function timelineLayout(groups: AirportGroup[], source: string, nowMs: nu
     ticks.push({ at, left: percent(at) });
   }
 
+  const where = groups.find(group => group.airport.location)?.airport.location;
+  const sun = where ? {
+    day: daylightIntervals(start, end, where.lat, where.lng).map(([a, b]) => ({ left: percent(a), width: percent(b) - percent(a) })),
+    edges: sunEvents(start, end, where.lat, where.lng)
+      .filter(event => event.at > start && event.at < end)
+      .map(event => ({ left: percent(event.at), kind: event.kind })),
+  } : null;
+
   return {
     start,
     end,
     ticks,
+    sun,
     now: nowMs >= start && nowMs <= end ? percent(nowMs) : null,
     rows: groups.map(group => ({
       airport: group.airport,

@@ -16,7 +16,7 @@ export default function Timeline({ groups, source, localTime }: { groups: Airpor
     <nav id="timeline" aria-label="Approach timeline" className="card mb-6 p-4 sm:p-6 scroll-mt-8">
       <div className="flex items-baseline justify-between gap-4 mb-3">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Approach timeline</h2>
-        <p className="text-xs text-slate-500 dark:text-slate-400">Bar color is the ceiling. Select an airport to jump to it.</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400">Bar color is the ceiling; lighter background is daytime. Select an airport to jump to it.</p>
       </div>
       <div className="flex text-xs text-slate-500 dark:text-slate-400">
         <div className="w-24 sm:w-32 shrink-0" />
@@ -37,17 +37,27 @@ export default function Timeline({ groups, source, localTime }: { groups: Airpor
                 <span className="font-semibold text-slate-900 dark:text-white group-hover:text-sky-600 dark:group-hover:text-sky-400">{airport.icao}</span>
                 <span className="ml-1.5 text-slate-500 dark:text-slate-400">{Math.round(airport.distance)} nm</span>
               </span>
-              <span className="relative h-4 flex-1 rounded-sm bg-slate-100 dark:bg-slate-700/40">
+              <span className="relative h-4 flex-1 rounded-sm bg-slate-200 dark:bg-slate-900/60">
+                {layout.sun?.day.map(({ left, width }) => (
+                  <span key={left} aria-hidden="true" className="absolute inset-y-0 bg-slate-50 dark:bg-slate-600/40" style={{ left: `${left}%`, width: `${width}%` }} />
+                ))}
                 {layout.ticks.map(tick => (
                   <span key={tick.at} aria-hidden="true" className="absolute inset-y-0 w-px bg-slate-200 dark:bg-slate-600" style={{ left: `${tick.left}%` }} />
+                ))}
+                {layout.sun?.edges.map(({ left, kind }) => (
+                  <span key={left} aria-hidden="true" title={kind} className="absolute inset-y-0 border-l border-dotted border-slate-500 dark:border-slate-400" style={{ left: `${left}%` }} />
                 ))}
                 {bars.map(({ left, width, period }) => {
                   const label = formatPeriod(period.start, period.end, localTime);
                   const ceiling = period.ceiling == null ? 'ceiling N/A' : `ceiling ${period.ceiling.toLocaleString()} ft`;
                   return (
-                    <span key={period.start} title={`${airport.icao} ${label.date} ${label.time}, ${ceiling}`}
-                      className={`absolute inset-y-0.5 rounded-sm ${ceilingColor(period.ceiling)}`}
-                      style={{ left: `${left}%`, width: `max(${width}%, 3px)` }} />
+                    <span key={period.start} aria-label={`${airport.icao} ${label.date} ${label.time}, ${ceiling}`}
+                      className={`group/bar absolute inset-y-0.5 rounded-sm ${ceilingColor(period.ceiling)}`}
+                      style={{ left: `${left}%`, width: `max(${width}%, 3px)` }}>
+                      <span role="tooltip" className="pointer-events-none invisible group-hover/bar:visible absolute bottom-full left-1/2 z-20 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-slate-900 px-2 py-1 text-xs font-medium text-white shadow-lg dark:bg-slate-100 dark:text-slate-900">
+                        {ceiling}<span className="font-normal opacity-75"> · {label.time}</span>
+                      </span>
+                    </span>
                   );
                 })}
                 {layout.now != null && (
