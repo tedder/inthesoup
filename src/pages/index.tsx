@@ -61,23 +61,6 @@ export default function Home() {
     )
   }, [])
 
-  // Restore the last search's airport, radius and source (saved on submit).
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('lastSearch') ?? 'null')
-      if (saved && typeof saved === 'object') {
-        if (typeof saved.airport === 'string') setAirport(saved.airport)
-        if (typeof saved.radius === 'string' && saved.radius) setRadius(saved.radius)
-        if (['metar', 'taf', 'nbh', 'nbs'].includes(saved.forecast)) setForecast(saved.forecast)
-      }
-    } catch (_) {}
-    const secure = window.isSecureContext && 'geolocation' in navigator
-    setCanLocate(secure)
-    let locationDefault = false
-    try { locationDefault = localStorage.getItem('useLocation') === '1' } catch (_) {}
-    if (secure && locationDefault) locate()
-  }, [locate])
-
   const handleAirportChange = (value: string) => {
     setAirport(value.toUpperCase())
     if (useLocation) {
@@ -114,21 +97,20 @@ export default function Home() {
     return () => media.removeEventListener('change', applyTheme)
   }, [darkMode, themeReady])
 
-  const handleSubmit = (e: any) => {
-    e.preventDefault()
+  type Search = { airport: string; radius: string; forecast: string; minCeiling: string; startHour: string; endHour: string }
 
-    if (loading) return;
-
-    const endpoint = '/api/approaches';
+  // Run a search and mirror it into the page URL (?airport=KPDX&radius=50&...) so it can be
+  // bookmarked and reloaded. Only non-default advanced values are written.
+  const runSearch = useCallback((search: Search) => {
     const params = new URLSearchParams({
-      airport,
-      radius,
-      forecast,
+      airport: search.airport,
+      radius: search.radius,
+      forecast: search.forecast,
     })
 
-    const parsedMinCeiling = Math.round(parseInt(minCeiling) / 100)
-    const parsedStartHour = parseInt(startHour)
-    const parsedEndHour = parseInt(endHour)
+    const parsedMinCeiling = Math.round(parseInt(search.minCeiling) / 100)
+    const parsedStartHour = parseInt(search.startHour)
+    const parsedEndHour = parseInt(search.endHour)
 
     if (!isNaN(parsedMinCeiling)) {
       params.set('minCeiling', String(parsedMinCeiling))
@@ -142,10 +124,16 @@ export default function Home() {
       params.set('endHour', String(parsedEndHour))
     }
 
-    try { localStorage.setItem('lastSearch', JSON.stringify({ airport, radius, forecast })) } catch (_) {}
+    const pageParams = new URLSearchParams({ airport: search.airport, radius: search.radius, forecast: search.forecast })
+    if (search.minCeiling !== '0') pageParams.set('ceiling', search.minCeiling)
+    if (search.startHour !== '0') pageParams.set('start', search.startHour)
+    if (search.endHour !== '23') pageParams.set('end', search.endHour)
+    try { window.history.replaceState(null, '', `?${pageParams.toString()}`) } catch (_) {}
+
+    try { localStorage.setItem('lastSearch', JSON.stringify({ airport: search.airport, radius: search.radius, forecast: search.forecast })) } catch (_) {}
 
     setLoading(true)
-    fetch(`${endpoint}?${params.toString()}`)
+    fetch(`/api/approaches?${params.toString()}`)
       .then((res) => res.json())
       .then((data) => {
         if (data.error) {
@@ -155,9 +143,62 @@ export default function Home() {
         }
 
         setForecasts(data)
-        setResultSource(forecast)
+        setResultSource(search.forecast)
         setLoading(false)
       })
+  }, [])
+
+  // A URL with ?airport=... wins over the remembered search and runs immediately.
+  const loadFromUrl = useCallback(() => {
+    const query = new URLSearchParams(window.location.search)
+    const urlAirport = (query.get('airport') ?? '').trim().toUpperCase()
+    if (!urlAirport) return false
+    const whole = (value: string | null, fallback: string, max: number) =>
+      value != null && /^\d{1,6}$/.test(value) && Number(value) <= max ? String(Number(value)) : fallback
+    const search: Search = {
+      airport: urlAirport,
+      radius: whole(query.get('radius'), '50', 500),
+      forecast: ['metar', 'taf', 'nbh', 'nbs'].includes(query.get('forecast') ?? '') ? query.get('forecast')! : 'metar',
+      minCeiling: whole(query.get('ceiling'), '0', 100000),
+      startHour: whole(query.get('start'), '0', 23),
+      endHour: whole(query.get('end'), '23', 23),
+    }
+    setAirport(search.airport)
+    setRadius(search.radius)
+    setForecast(search.forecast)
+    setMinCeiling(search.minCeiling)
+    setStartHour(search.startHour)
+    setEndHour(search.endHour)
+    if (search.minCeiling !== '0' || search.startHour !== '0' || search.endHour !== '23') setShowAdvanced(true)
+    runSearch(search)
+    return true
+  }, [runSearch])
+
+  // Restore the last search's airport, radius and source (saved on submit).
+  useEffect(() => {
+    if (loadFromUrl()) {
+      setCanLocate(window.isSecureContext && 'geolocation' in navigator)
+      return
+    }
+    try {
+      const saved = JSON.parse(localStorage.getItem('lastSearch') ?? 'null')
+      if (saved && typeof saved === 'object') {
+        if (typeof saved.airport === 'string') setAirport(saved.airport)
+        if (typeof saved.radius === 'string' && saved.radius) setRadius(saved.radius)
+        if (['metar', 'taf', 'nbh', 'nbs'].includes(saved.forecast)) setForecast(saved.forecast)
+      }
+    } catch (_) {}
+    const secure = window.isSecureContext && 'geolocation' in navigator
+    setCanLocate(secure)
+    let locationDefault = false
+    try { locationDefault = localStorage.getItem('useLocation') === '1' } catch (_) {}
+    if (secure && locationDefault) locate()
+  }, [locate, loadFromUrl])
+
+  const handleSubmit = (e: any) => {
+    e.preventDefault()
+    if (loading) return
+    runSearch({ airport, radius, forecast, minCeiling, startHour, endHour })
   }
 
   return (
@@ -468,9 +509,21 @@ export default function Home() {
               >
                 Andrew Dassonville
               </a>
+              {', '}
+              <a
+                href="https://github.com/tedder/inthesoup"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-sky-600 hover:text-sky-500 dark:text-sky-400 dark:hover:text-sky-300 transition-colors"
+              >
+                modified by tedder
+              </a>
             </p>
             <p className="text-center text-sm text-slate-500 dark:text-slate-400">
               Weather data provided by NOAA Aviation Weather Center
+            </p>
+            <p className="mt-2 text-center text-xs text-slate-400 dark:text-slate-500">
+              Version {process.env.NEXT_PUBLIC_APP_VERSION}
             </p>
           </div>
         </footer>
