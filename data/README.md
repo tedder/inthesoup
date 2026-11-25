@@ -112,6 +112,9 @@ With user credentials from `gcloud auth application-default login` instead,
 mount `~/.config/gcloud/application_default_credentials.json` the same way and
 also set `GOOGLE_CLOUD_PROJECT`, since user credentials carry no project.
 
+For scheduled runs with Docker Compose (weather hourly, CIFP weekly, DuckDB-backed
+web app), see the Self-hosting section of the root README.
+
 ## CIFP loader
 
 Run the CIFP/chart tests and a full FAA download, parse, and chart merge with:

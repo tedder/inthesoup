@@ -540,11 +540,11 @@ class TestParquetOutput:
         assert names == ['weather.metar.parquet', 'weather.nbh.parquet', 'weather.nbs.parquet',
                          'weather.status.json', 'weather.taf.parquet']
         metar = pd.read_parquet(out / 'weather.metar.parquet')
-        assert str(metar.Time.dtype) == 'datetime64[ns, UTC]'
+        assert str(metar.Time.dtype) == 'datetime64[us, UTC]'
         assert metar.Time[0] == pd.Timestamp('2026-11-25 08:15', tz='UTC')
         assert metar.IFC.dtype == 'float64'
         nbh = pd.read_parquet(out / 'weather.nbh.parquet')
-        assert str(nbh.Time.dtype) == str(nbh.Forecast_Time.dtype) == 'datetime64[ns, UTC]'
+        assert str(nbh.Time.dtype) == str(nbh.Forecast_Time.dtype) == 'datetime64[us, UTC]'
         assert nbh.Time[0] == pd.Timestamp('2026-11-25 01:00', tz='UTC')
         # DuckDB cannot EXTRACT from nanosecond timestamps, so the files must use microseconds.
         import pyarrow.parquet as pq
