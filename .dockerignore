@@ -1,0 +1,16 @@
+.git
+.github
+.claude
+node_modules
+build
+.next
+out
+coverage
+*.tsbuildinfo
+npm-debug.log*
+.env*
+.DS_Store
+# The data image builds with data/ as its own context, so this only affects the web image.
+data
+CIFP_*
+tests/**/*.out

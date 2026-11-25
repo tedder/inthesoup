@@ -1,0 +1,66 @@
+name: inthesoup
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+# Both loaders use the same image; the entrypoint selects the job.
+x-data: &data
+  build: data
+  image: inthesoup-data
+  user: "1000:1000"
+  restart: unless-stopped
+  logging: *logging
+  volumes:
+    - data:/data
+  # No healthcheck on purpose: a container marked unhealthy can be restarted by
+  # autoheal-style tools, and a failed load is not a reason to restart the scheduler.
+
+services:
+  web:
+    build: .
+    image: inthesoup-web
+    ports:
+      - "${INTHESOUP_PORT:-5095}:8080"
+    environment:
+      DUCKDB_MEMORY_LIMIT: ${DUCKDB_MEMORY_LIMIT:-}
+      DUCKDB_THREADS: ${DUCKDB_THREADS:-}
+      MAX_WEATHER_AGE_HOURS: ${MAX_WEATHER_AGE_HOURS:-}
+      MAX_CIFP_AGE_DAYS: ${MAX_CIFP_AGE_DAYS:-}
+    volumes:
+      - data:/data:ro
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 512m
+    # Liveness only (GET / renders without data). Do not use /api/health here: it
+    # returns 503 while data is loading or stale, which would cause restart loops.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  weather:
+    <<: *data
+    entrypoint: ["/app/scheduler.sh", "weather"]
+    environment:
+      TQDM_DISABLE: "1"
+      WEATHER_SCHEDULE: ${WEATHER_SCHEDULE:-45 * * * *}
+      KUMA_PUSH_URL_WEATHER: ${KUMA_PUSH_URL_WEATHER:-}
+    mem_limit: 1g
+
+  cifp:
+    <<: *data
+    entrypoint: ["/app/scheduler.sh", "cifp"]
+    environment:
+      TQDM_DISABLE: "1"
+      CIFP_SCHEDULE: ${CIFP_SCHEDULE:-0 0 * * 0}
+      KUMA_PUSH_URL_CIFP: ${KUMA_PUSH_URL_CIFP:-}
+    # Measured peak about 2.5 GiB during the Reading CIFP records step.
+    mem_limit: 4g
+
+volumes:
+  data:

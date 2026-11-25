@@ -77,6 +77,24 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/out:/out" \
   inthesoup-data load_cifp.py --output-dir /out
 ```
 
+Add `--format parquet` to write `<table>.parquet` instead. In Parquet output
+`Time` and `Forecast_Time` are timezone-aware UTC (naive NBH/NBS times are
+treated as UTC); the BigQuery upload is unchanged.
+
+Every file is written to a hidden temp file in the output directory and then
+moved into place with `os.replace()`, so a reader (such as DuckDB) never sees a
+partial file; a failed run leaves the previous files untouched. After all tables
+are written, the loader atomically writes `weather.status.json` or
+`aeronautical.status.json` (both formats):
+
+```json
+{"finished_at": "2026-11-24T23:52:10Z", "format": "parquet",
+ "tables": {"weather.metar": {"rows": 2601, "latest_source_time": "2026-11-25T00:15:00Z"}}}
+```
+
+`latest_source_time` (weather only) is the maximum `Forecast_Time`; the CIFP
+status has a `cycle` field and per-table `rows` only.
+
 The same flag works outside Docker. The Next.js API still reads only from
 BigQuery.
 
@@ -93,6 +111,9 @@ docker run --rm \
 With user credentials from `gcloud auth application-default login` instead,
 mount `~/.config/gcloud/application_default_credentials.json` the same way and
 also set `GOOGLE_CLOUD_PROJECT`, since user credentials carry no project.
+
+For scheduled runs with Docker Compose (weather hourly, CIFP weekly, DuckDB-backed
+web app), see the Self-hosting section of the root README.
 
 ## CIFP loader
 

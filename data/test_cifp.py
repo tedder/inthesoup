@@ -1,6 +1,8 @@
 """CIFP/chart regressions; set CIFP_LIVE_TEST=1 for a read-only live test."""
 
+import json
 import os
+import re
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
@@ -133,8 +135,59 @@ def test_output_dir_writes_csv_instead_of_bigquery(tmp_path):
         load_cifp.main(output_dir=str(tmp_path))
     auth.assert_not_called()
     upload.assert_not_called()
-    assert sorted(path.name for path in tmp_path.iterdir()) == ['aeronautical.airport.csv', 'aeronautical.faf.csv']
+    assert sorted(path.name for path in tmp_path.iterdir()) == ['aeronautical.airport.csv', 'aeronautical.faf.csv', 'aeronautical.status.json']
     assert pd.read_csv(tmp_path / 'aeronautical.airport.csv').Airport_ICAO_Identifier.tolist() == ['09J']
+
+def run_cifp(out, **kwargs):
+    fixture = os.path.join(os.path.dirname(__file__), 'fixtures', 'fap_vor_a.txt')
+    with patch('load_cifp.get_current_cifp_cycle', return_value=('https://example.test/cifp.zip', '2610')), \
+         patch('load_cifp.download_cifp', return_value=fixture), \
+         patch('load_cifp.get_charts', return_value=pd.DataFrame()), \
+         patch('load_cifp.merge_charts', side_effect=lambda faf, charts: faf), \
+         patch('load_cifp.google.auth.default') as auth, \
+         patch('load_cifp.pandas_gbq.to_gbq') as upload:
+        load_cifp.main(output_dir=str(out), **kwargs)
+    auth.assert_not_called()
+    upload.assert_not_called()
+
+
+def test_parquet_output_and_status(tmp_path):
+    run_cifp(tmp_path, output_format='parquet')
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        'aeronautical.airport.parquet', 'aeronautical.faf.parquet', 'aeronautical.status.json']
+    airport = pd.read_parquet(tmp_path / 'aeronautical.airport.parquet')
+    faf = pd.read_parquet(tmp_path / 'aeronautical.faf.parquet')
+    assert airport.Airport_ICAO_Identifier.tolist() == ['09J']
+    status = json.loads((tmp_path / 'aeronautical.status.json').read_text())
+    assert list(status) == ['finished_at', 'format', 'cycle', 'tables']
+    assert status['format'] == 'parquet'
+    assert status['cycle'] == '2610'
+    assert re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ', status['finished_at'])
+    assert status['tables'] == {'aeronautical.airport': {'rows': len(airport)},
+                                'aeronautical.faf': {'rows': len(faf)}}
+
+
+def test_csv_format_also_writes_status(tmp_path):
+    run_cifp(tmp_path)
+    assert json.loads((tmp_path / 'aeronautical.status.json').read_text())['format'] == 'csv'
+
+
+def test_failed_parquet_write_keeps_previous_files(tmp_path):
+    run_cifp(tmp_path, output_format='parquet')
+    before = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+    calls = []
+    real = pd.DataFrame.to_parquet
+
+    def flaky(self, path, **kwargs):
+        calls.append(path)
+        if len(calls) == 2:
+            raise OSError('disk full')
+        return real(self, path, **kwargs)
+
+    with patch.object(pd.DataFrame, 'to_parquet', flaky), pytest.raises(OSError):
+        run_cifp(tmp_path, output_format='parquet')
+    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == before
+
 
 @pytest.mark.skipif(os.environ.get('CIFP_LIVE_TEST') != '1', reason='Set CIFP_LIVE_TEST=1 for live FAA downloads')
 def test_live_cifp_dry_run():
