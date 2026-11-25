@@ -6,7 +6,8 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY . ./
 ARG GIT_SHA=dev
-ENV GIT_SHA=$GIT_SHA
+ARG APP_VERSION=
+ENV GIT_SHA=$GIT_SHA APP_VERSION=$APP_VERSION
 RUN npm run build
 
 FROM node:24-bookworm-slim

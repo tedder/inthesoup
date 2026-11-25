@@ -3,12 +3,16 @@ name: Publish Images
 # Builds the self-hosting images and pushes them to GitHub Container Registry:
 #   ghcr.io/<owner>/inthesoup-web   (root Dockerfile)
 #   ghcr.io/<owner>/inthesoup-data  (data/Dockerfile)
-# Tags: `main` (latest main) and `sha-<short sha>` (pin this in deployments).
+# Tags: `main` (latest main), `sha-<short sha>`, and on a release tag `vX.Y.Z` the
+# version `X.Y.Z` (pin this in deployments). Cut a release with:
+#   gh release create vX.Y.Z --generate-notes
 
 on:
   push:
     branches:
       - main
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
 
 permissions:
@@ -42,6 +46,7 @@ jobs:
           tags: |
             type=raw,value=main
             type=sha,prefix=sha-
+            type=semver,pattern={{version}}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
       - uses: docker/build-push-action@v6
@@ -51,6 +56,7 @@ jobs:
           push: true
           build-args: |
             GIT_SHA=${{ github.sha }}
+            APP_VERSION=${{ github.ref_type == 'tag' && github.ref_name || '' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.image }}
